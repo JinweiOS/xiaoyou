@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>访问认证</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f8f8f8;color:#333;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:430px;min-height:100vh;margin:auto;padding:64px 24px;background:#fafafa}.mark{width:48px;height:48px;display:grid;place-items:center;background:#fff0d8;border-radius:14px;color:#ee8c18;font-size:25px}
+h1{font-size:23px;margin:24px 0 10px}p{font-size:13px;line-height:1.8;color:#888}label{display:block;margin:30px 0 10px;font-size:13px}input{width:100%;height:52px;padding:0 15px;background:#fff;border:1px solid #ddd;border-radius:9px;font-size:24px;letter-spacing:9px;outline:none}input:focus{border-color:#ffa82e;box-shadow:0 0 0 3px #fff0d8}button{width:100%;height:46px;margin-top:12px;border:0;border-radius:9px;background:linear-gradient(90deg,#ffc21f,#ff8d0a);color:#fff;font-size:15px;cursor:pointer}button:disabled{opacity:.6;cursor:wait}#message{min-height:22px;margin:8px 0;color:#c84822;font-size:12px;letter-spacing:0}.note{margin-top:20px;font-size:12px}
+</style>
+<style>
+.code-boxes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin-top:10px}
+.code-boxes input{width:100%;min-width:0;height:auto;aspect-ratio:1;padding:0;text-align:center;letter-spacing:0;font-size:25px;border-radius:8px}
+.code-label{margin-top:30px;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <div class="mark" aria-hidden="true"><svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 15v2"/></svg></div>
+  <h1>输入认证码</h1>
+  <p>请输入当前的 6 位认证码，验证后进入。</p>
+  <form id="auth-form">
+    <div class="code-label" id="code-label">认证码</div>
+    <div class="code-boxes" role="group" aria-labelledby="code-label" aria-describedby="message">
+      <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="认证码第 1 位">
+      <input type="text" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="认证码第 2 位">
+      <input type="text" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="认证码第 3 位">
+      <input type="text" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="认证码第 4 位">
+      <input type="text" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="认证码第 5 位">
+      <input type="text" inputmode="numeric" autocomplete="off" maxlength="6" aria-label="认证码第 6 位">
+    </div>
+    <p id="message" role="status" aria-live="polite"></p>
+    <button id="submit" type="submit">验证并进入</button>
+  </form>
+  <p class="note">认证码每天北京时间 09:00 更新，请向管理员获取。</p>
+</main>
+<script>
+const form=document.getElementById('auth-form'),inputs=[...document.querySelectorAll('.code-boxes input')],button=document.getElementById('submit'),message=document.getElementById('message');
+const digits=value=>value.normalize('NFKC').replace(/\D/g,'');
+function distribute(value,index){
+  const text=digits(value).slice(0,6);
+  if(!text)return;
+  if(text.length===6){index=0;inputs.forEach(input=>input.value='')}
+  [...text].slice(0,6-index).forEach((digit,offset)=>inputs[index+offset].value=digit);
+  inputs[Math.min(5,index+text.length)].focus();message.textContent='';
+}
+inputs.forEach((input,index)=>{
+  input.addEventListener('focus',()=>input.select());
+  input.addEventListener('input',()=>{
+    const value=digits(input.value);input.value='';
+    distribute(value,index);message.textContent='';
+  });
+  input.addEventListener('paste',event=>{event.preventDefault();distribute(event.clipboardData.getData('text'),index)});
+  input.addEventListener('keydown',event=>{
+    if(event.key==='Backspace'&&!input.value&&index>0){event.preventDefault();inputs[index-1].value='';inputs[index-1].focus()}
+    if(event.key==='ArrowLeft'&&index>0){event.preventDefault();inputs[index-1].focus()}
+    if(event.key==='ArrowRight'&&index<5){event.preventDefault();inputs[index+1].focus()}
+  });
+});
+form.addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(button.disabled)return;
+  const code=inputs.map(input=>input.value).join('');
+  if(!/^[0-9]{6}$/.test(code)){message.textContent='请输入 6 位数字认证码';(inputs.find(input=>!input.value)||inputs[0]).focus();return}
+  button.disabled=true;button.textContent='正在验证…';message.textContent='';
+  try{
+    const response=await fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code}),cache:'no-store'});
+    if(response.ok){location.replace('/app');return}
+    if(response.status===429){message.textContent='尝试次数过多，请稍后再试'}
+    else if(response.status===401){message.textContent='认证码错误或已过期，请重新输入'}
+    else{message.textContent='暂时无法验证，请稍后再试'}
+    inputs[0].focus();
+  }catch(e){message.textContent='无法连接服务，请检查网络后重试'}
+  finally{button.disabled=false;button.textContent='验证并进入'}
+});
+</script>
+</body>
+</html>
